@@ -3,7 +3,6 @@ import sqlite3
 import pandas as pd
 from typing import Dict, Any, List, Tuple, Optional
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
 from app.multi_tenant import get_supabase_client_for_client_id
 from app.database import get_db_path_for_client, init_db_for_client
 from app.utils import (
@@ -49,7 +48,8 @@ def extract_supabase_calls(client_id: str = "2", last_created_at_utc: Optional[s
     all_data = []
     batch_size = 1000
     start = 0
-    columns = "id, call_id, to_number, Nome, Email, agent_name, created_at, recording_url, combined_cost, Duracao, disconnection_reason"
+    # Selecionamos transcript e removemos custos
+    columns = "id, call_id, to_number, Nome, Email, agent_name, created_at, recording_url, transcript, Duracao, disconnection_reason"
     
     while True:
         query = supabase_client.table("Retell_calls_Mindflow").select(columns)
@@ -79,9 +79,9 @@ def transform_call_data(raw_calls: List[Dict[str, Any]], client_id: str = "2", i
     # 1. Converter datas UTC para o fuso de Brasília (America/Sao_Paulo)
     df_new['created_at'] = pd.to_datetime(df_new['created_at']).dt.tz_convert('America/Sao_Paulo')
     
-    # 2. Conversões de numéricos
+    # 2. Conversão de Duração (ms -> s)
     df_new['Duracao'] = pd.to_numeric(df_new['Duracao'], errors='coerce').fillna(0.0) / 1000.0
-    df_new['combined_cost'] = pd.to_numeric(df_new['combined_cost'], errors='coerce').fillna(0.0) / 100.0
+    df_new['transcript'] = df_new['transcript'].fillna("")
     
     # 3. Categorias de desconexão
     def map_disconnection_reason(reason: Any, duration_sec: float) -> str:
@@ -125,7 +125,9 @@ def transform_call_data(raw_calls: List[Dict[str, Any]], client_id: str = "2", i
                 if not df_old.empty:
                     df_old['created_at'] = pd.to_datetime(df_old['created_at']).dt.tz_localize('America/Sao_Paulo')
                     df_old['Duracao'] = pd.to_numeric(df_old['Duracao'], errors='coerce').fillna(0.0)
-                    df_old['combined_cost'] = pd.to_numeric(df_old['combined_cost'], errors='coerce').fillna(0.0)
+                    if 'transcript' not in df_old.columns:
+                        df_old['transcript'] = ""
+                    df_old['transcript'] = df_old['transcript'].fillna("")
                     df = pd.concat([df_old, df_new], ignore_index=True)
                 else:
                     df = df_new

@@ -21,7 +21,7 @@ A API suporta múltiplos clientes (multi-tenancy) através do cabeçalho HTTP `X
 
 ### 1. `GET /metrics` — Indicadores Chave de Desempenho (KPIs)
 
-Retorna métricas consolidadas de ligações, contatos únicos, conversão, custos e médias de pressão de fadiga.
+Retorna métricas consolidadas de ligações, contatos únicos, conversão, **minutagem (total, média e por lead)** e médias de pressão de fadiga. *(Nota: Métricas financeiras/custo foram removidas)*.
 
 #### Parâmetros de Consulta (Query Params)
 - `agent` *(opcional, string)*: Nome amigável do agente SDR.
@@ -37,10 +37,10 @@ Retorna métricas consolidadas de ligações, contatos únicos, conversão, cust
   "total_hooks": 890,
   "total_conversas": 420,
   "total_interesse": 185,
-  "total_cost": 142.50,
+  "minutagem_total": 485.50,
+  "minutagem_media": 1.35,
+  "minutagem_por_lead": 0.39,
   "avg_ligacoes_por_lead": 2.84,
-  "custo_por_lead": 0.11,
-  "custo_por_interesse": 0.77,
   "taxa_interesse_por_lead": 14.80,
   "taxa_tentativa_por_lead": 2.84,
   "avg_density": 0.245,
@@ -71,9 +71,9 @@ Retorna a quantidade de **Leads Únicos** que atingiram cada um dos 4 estágios 
 
 ---
 
-### 3. `GET /calls` — Auditoria de Ligações (Paginada)
+### 3. `GET /calls` — Auditoria de Ligações (Paginada com Transcrição)
 
-Retorna a lista paginada de chamadas gravadas para exibição em tabela e reprodução no Player de Áudio.
+Retorna a lista paginada de chamadas para exibição em tabela, player de áudio e **transcrição textual da conversa (`transcript`)**.
 
 #### Parâmetros de Consulta (Query Params)
 - `agent`, `start_date`, `end_date`, `client_id`
@@ -98,7 +98,7 @@ Retorna a lista paginada de chamadas gravadas para exibição em tabela e reprod
       "agent_name": "Agente Vendas 01",
       "created_at": "2026-07-31 11:45:00",
       "recording_url": "https://api.retellai.com/recordings/call_9a8b7c6d5e4f.wav",
-      "combined_cost": 0.045,
+      "transcript": "Agente: Olá Carlos, tudo bem?\nLead: Tudo ótimo! Gostaria de saber mais sobre a plataforma.",
       "Duracao": 125.4,
       "disconnection_category": "Conversa Normal",
       "n_tentativas_anteriores": 2,

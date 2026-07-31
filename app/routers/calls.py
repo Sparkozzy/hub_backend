@@ -42,7 +42,7 @@ async def get_calls(
     list_query = f"""
     SELECT 
         call_id, to_number, Nome, Email, agent_name, created_at, 
-        recording_url, combined_cost, Duracao, disconnection_category,
+        recording_url, transcript, Duracao, disconnection_category,
         n_tentativas_anteriores, densidade_tentativas, pressao_recente
     FROM calls
     WHERE 1=1 {where_clause} {duration_where}

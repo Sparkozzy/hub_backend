@@ -25,7 +25,7 @@ def init_db_for_client(client_id: str = "2"):
         agent_name TEXT,
         created_at TEXT,
         recording_url TEXT,
-        combined_cost REAL,
+        transcript TEXT,
         Duracao REAL,
         disconnection_reason TEXT,
         disconnection_category TEXT,
@@ -40,6 +40,12 @@ def init_db_for_client(client_id: str = "2"):
         pressao_recente REAL
     )
     """)
+    
+    # Migração segura se o banco já existir sem a coluna transcript
+    cursor.execute("PRAGMA table_info(calls)")
+    columns = [col[1] for col in cursor.fetchall()]
+    if "transcript" not in columns:
+        cursor.execute("ALTER TABLE calls ADD COLUMN transcript TEXT")
     
     cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_calls_call_id ON calls(call_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_calls_to_number ON calls(to_number)")

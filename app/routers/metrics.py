@@ -22,7 +22,8 @@ async def get_metrics(
         sum(is_hook) as total_hooks,
         sum(is_conversa) as total_conversas,
         sum(is_interesse) as total_interesse,
-        sum(combined_cost) as total_cost,
+        sum(Duracao) as total_duration_seconds,
+        avg(Duracao) as avg_duration_seconds,
         avg(densidade_tentativas) as avg_density,
         avg(pressao_recente) as avg_pressure
     FROM calls
@@ -37,10 +38,10 @@ async def get_metrics(
             "total_hooks": 0,
             "total_conversas": 0,
             "total_interesse": 0,
-            "total_cost": 0.0,
+            "minutagem_total": 0.0,
+            "minutagem_media": 0.0,
+            "minutagem_por_lead": 0.0,
             "avg_ligacoes_por_lead": 0.0,
-            "custo_por_lead": 0.0,
-            "custo_por_interesse": 0.0,
             "taxa_interesse_por_lead": 0.0,
             "taxa_tentativa_por_lead": 0.0,
             "avg_density": 0.0,
@@ -53,13 +54,17 @@ async def get_metrics(
     total_hooks = row["total_hooks"] or 0
     total_conversas = row["total_conversas"] or 0
     total_interesse = row["total_interesse"] or 0
-    total_cost = row["total_cost"] or 0.0
+    total_duration_seconds = row["total_duration_seconds"] or 0.0
+    avg_duration_seconds = row["avg_duration_seconds"] or 0.0
     avg_density = row["avg_density"] or 0.0
     avg_pressure = row["avg_pressure"] or 0.0
     
+    # Conversões para minutos (segundos / 60.0)
+    minutagem_total = total_duration_seconds / 60.0
+    minutagem_media = avg_duration_seconds / 60.0
+    minutagem_por_lead = (total_duration_seconds / unique_leads) / 60.0 if unique_leads > 0 else 0.0
+    
     avg_calls_per_lead = total_calls / unique_leads if unique_leads > 0 else 0.0
-    cost_per_lead = total_cost / unique_leads if unique_leads > 0 else 0.0
-    cost_per_interest = total_cost / total_interesse if total_interesse > 0 else 0.0
     interest_rate = (total_interesse / unique_leads) * 100.0 if unique_leads > 0 else 0.0
     
     return {
@@ -68,10 +73,10 @@ async def get_metrics(
         "total_hooks": total_hooks,
         "total_conversas": total_conversas,
         "total_interesse": total_interesse,
-        "total_cost": round(total_cost, 2),
+        "minutagem_total": round(minutagem_total, 2),
+        "minutagem_media": round(minutagem_media, 2),
+        "minutagem_por_lead": round(minutagem_por_lead, 2),
         "avg_ligacoes_por_lead": round(avg_calls_per_lead, 2),
-        "custo_por_lead": round(cost_per_lead, 2),
-        "custo_por_interesse": round(cost_per_interest, 2),
         "taxa_interesse_por_lead": round(interest_rate, 2),
         "taxa_tentativa_por_lead": round(avg_calls_per_lead, 2),
         "avg_density": round(avg_density, 3),
