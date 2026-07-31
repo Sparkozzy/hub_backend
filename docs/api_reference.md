@@ -21,7 +21,7 @@ A API suporta múltiplos clientes (multi-tenancy) através do cabeçalho HTTP `X
 
 ### 1. `GET /metrics` — Indicadores Chave de Desempenho (KPIs)
 
-Retorna métricas consolidadas de ligações, contatos únicos, conversão, **minutagem (total, média e por lead)** e médias de pressão de fadiga. *(Nota: Métricas financeiras/custo foram removidas)*.
+Retorna métricas consolidadas de ligações, contatos únicos, conversão, minutagem e **métricas de agendamentos (`total_agendamentos` e `taxa_agendamento_por_lead`)**.
 
 #### Parâmetros de Consulta (Query Params)
 - `agent` *(opcional, string)*: Nome amigável do agente SDR.
@@ -37,6 +37,8 @@ Retorna métricas consolidadas de ligações, contatos únicos, conversão, **mi
   "total_hooks": 890,
   "total_conversas": 420,
   "total_interesse": 185,
+  "total_agendamentos": 85,
+  "taxa_agendamento_por_lead": 6.80,
   "minutagem_total": 485.50,
   "minutagem_media": 1.35,
   "minutagem_por_lead": 0.39,
@@ -50,7 +52,48 @@ Retorna métricas consolidadas de ligações, contatos únicos, conversão, **mi
 
 ---
 
-### 2. `GET /funnel` — Funil de Conversão SDR
+### 2. `GET /agendamentos` — Detalhamento Paginado de Agendamentos (Novo)
+
+Retorna a lista paginada e detalhada de agendamentos registrados no banco local do cliente.
+
+#### Parâmetros de Consulta (Query Params)
+- `status` *(opcional, string)*: Filtrar por status (`agendado`, `realizado`, `cancelado`).
+- `canal` *(opcional, string)*: Filtrar por canal (`ligacao`, `whatsapp`).
+- `search` *(opcional, string)*: Busca parcial por Nome, E-mail ou Telefone.
+- `start_date`, `end_date`, `client_id`
+- `page` *(opcional, int, padrão: 1)*: Número da página (ge=1).
+- `limit` *(opcional, int, padrão: 20, max: 100)*: Itens por página.
+
+#### Exemplo de Resposta (`200 OK`)
+```json
+{
+  "total": 85,
+  "page": 1,
+  "limit": 20,
+  "pages": 5,
+  "data": [
+    {
+      "id": "85a572c0-4f3b-4912-a58a-8e41ec8c95ad",
+      "created_at": "2026-07-16 15:05:41",
+      "nome": "RYAN FELIPE FERRARI",
+      "email": "ryanferrari@iatize-ia.com",
+      "numero": "+5548996027108",
+      "canal": "ligacao",
+      "data_agendamento": "2026-07-17 17:00:00",
+      "status": "agendado",
+      "detalhes": "Envio de material de indicadores + abertura de relacionamento",
+      "google_event_id": "nb56e584ep30akoskbfe3e33rc",
+      "calendar_id": "c_0c05c1269e9b6880ecd85c1083e3ff63c6632b53e8d0e72e55db17baec6e8291@group.calendar.google.com",
+      "execution_id": "c2ec3a88-7d2f-4784-b4b9-9b99df59fdff",
+      "agent_id": "Agente_Gatekeeper_Mindflow_Trafego"
+    }
+  ]
+}
+```
+
+---
+
+### 3. `GET /funnel` — Funil de Conversão SDR
 
 Retorna a quantidade de **Leads Únicos** que atingiram cada um dos 4 estágios do funil.
 
@@ -71,7 +114,7 @@ Retorna a quantidade de **Leads Únicos** que atingiram cada um dos 4 estágios 
 
 ---
 
-### 3. `GET /calls` — Auditoria de Ligações (Paginada com Transcrição)
+### 4. `GET /calls` — Auditoria de Ligações (Paginada com Transcrição)
 
 Retorna a lista paginada de chamadas para exibição em tabela, player de áudio e **transcrição textual da conversa (`transcript`)**.
 
@@ -111,106 +154,30 @@ Retorna a lista paginada de chamadas para exibição em tabela, player de áudio
 
 ---
 
-### 4. `GET /fatigue` — Análise de Fadiga & Pressão
+### 5. `GET /fatigue` — Análise de Fadiga & Pressão
 
 Retorna o impacto do número de tentativas anteriores (`n_tentativas_anteriores`) na taxa de conversão em interesse do lead.
 
-#### Exemplo de Resposta (`200 OK`)
-```json
-[
-  {
-    "attempt_bucket": "1ª Ligação",
-    "call_count": 1250,
-    "interest_count": 95,
-    "conversion_rate": 7.60,
-    "avg_density": 0.000,
-    "avg_pressure": 0.000
-  },
-  {
-    "attempt_bucket": "2ª Ligação",
-    "call_count": 820,
-    "interest_count": 52,
-    "conversion_rate": 6.34,
-    "avg_density": 0.180,
-    "avg_pressure": 0.350
-  }
-]
-```
-
 ---
 
-### 5. `GET /hours` — Horário Nobre de Contato (Fuso BRT)
+### 6. `GET /hours` — Horário Nobre de Contato (Fuso BRT)
 
 Retorna o volume de chamadas e a taxa de conversão agrupados por hora do dia (no fuso `America/Sao_Paulo`).
 
-#### Exemplo de Resposta (`200 OK`)
-```json
-[
-  {
-    "hour": "09:00",
-    "call_count": 320,
-    "interest_count": 42,
-    "conversion_rate": 13.125
-  },
-  {
-    "hour": "10:00",
-    "call_count": 450,
-    "interest_count": 68,
-    "conversion_rate": 15.11
-  }
-]
-```
-
 ---
 
-### 6. `GET /disconnections` — Categoria de Desconexões
+### 7. `GET /disconnections` — Categoria de Desconexões
 
 Retorna a distribuição percentual das causas de encerramento da chamada.
 
-#### Parâmetros de Consulta (Query Params)
-- `detailed` *(opcional, bool, padrão: false)*: Se `true`, retorna os motivos técnicos granulares do Retell.
-
-#### Exemplo de Resposta (`200 OK`)
-```json
-[
-  {
-    "category": "Conversa Normal",
-    "count": 1850,
-    "percentage": 52.20
-  },
-  {
-    "category": "Não Atendeu",
-    "count": 1200,
-    "percentage": 33.86
-  }
-]
-```
-
 ---
 
-### 7. `GET /agents` — Agentes Ativos
+### 8. `GET /agents` — Agentes Ativos
 
 Retorna a lista de nomes únicos de agentes SDR que efetuaram chamadas.
 
-#### Exemplo de Resposta (`200 OK`)
-```json
-[
-  "Agente Vendas 01",
-  "Agente Vendas 02",
-  "Gatekeeper AI"
-]
-```
-
 ---
 
-### 8. `POST /etl/trigger` — Disparo Manual de ETL
+### 9. `POST /etl/trigger` — Disparo Manual de ETL
 
-Dispara o pipeline de ingestão e pré-processamento em background para o cliente especificado.
-
-#### Exemplo de Resposta (`200 OK`)
-```json
-{
-  "status": "success",
-  "message": "ETL pipeline iniciado em background para o cliente 5."
-}
-```
+Dispara o pipeline de ingestão e pré-processamento em background (Calls + Agendamentos) para o cliente especificado.

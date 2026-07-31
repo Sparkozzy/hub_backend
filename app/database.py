@@ -54,6 +54,30 @@ def init_db_for_client(client_id: str = "2"):
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_calls_duration ON calls(Duracao)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_calls_disconnection_category ON calls(disconnection_category)")
     
+    # Criar tabela agendamentos local
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS agendamentos (
+        id TEXT PRIMARY KEY,
+        created_at TEXT,
+        nome TEXT,
+        email TEXT,
+        numero TEXT,
+        canal TEXT,
+        data_agendamento TEXT,
+        status TEXT,
+        detalhes TEXT,
+        google_event_id TEXT,
+        calendar_id TEXT,
+        execution_id TEXT,
+        agent_id TEXT
+    )
+    """)
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_agendamentos_id ON agendamentos(id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_agendamentos_numero ON agendamentos(numero)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_agendamentos_created_at ON agendamentos(created_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_agendamentos_status ON agendamentos(status)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_agendamentos_canal ON agendamentos(canal)")
+
     conn.commit()
     conn.close()
 

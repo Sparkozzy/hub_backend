@@ -12,7 +12,10 @@ from app.utils import (
     BR_TZ
 )
 
-def get_last_created_at_local(client_id: str = "2") -> Optional[str]:
+# ============================================================
+# HELPER DE DATA LOCAL NO SQLITE
+# ============================================================
+def get_last_created_at_local(table_name: str = "calls", client_id: str = "2") -> Optional[str]:
     """Retorna a última data registrada no SQLite do cliente em formato UTC ISO 8601."""
     db_path = get_db_path_for_client(client_id)
     if not os.path.exists(db_path):
@@ -21,34 +24,36 @@ def get_last_created_at_local(client_id: str = "2") -> Optional[str]:
     try:
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
-        cursor.execute("SELECT MAX(created_at) FROM calls")
+        cursor.execute(f"SELECT MAX(created_at) FROM {table_name}")
         row = cursor.fetchone()
         conn.close()
         
         if row and row[0]:
-            last_created_str = row[0]  # Format: 'YYYY-MM-DD HH:MM:SS' em Brasília
+            last_created_str = row[0]
             dt_local = datetime.strptime(last_created_str, '%Y-%m-%d %H:%M:%S')
             dt_local_with_tz = dt_local.replace(tzinfo=BR_TZ)
             dt_utc = dt_local_with_tz.astimezone(timezone.utc)
             return dt_utc.isoformat()
     except Exception as e:
-        print(f"[ETL Warning] Erro ao consultar estado local do cliente {client_id}: {e}")
+        print(f"[ETL Warning] Erro ao consultar estado local ({table_name}) do cliente {client_id}: {e}")
         
     return None
 
+# ============================================================
+# INGESTÃO E PROCESSAMENTO DE LIGAÇÕES (calls)
+# ============================================================
 def extract_supabase_calls(client_id: str = "2", last_created_at_utc: Optional[str] = None) -> List[Dict[str, Any]]:
     """Extrai chamadas do Supabase do cliente com paginação de 1.000 em 1.000."""
     supabase_client, _ = get_supabase_client_for_client_id(client_id)
     
     if last_created_at_utc:
-        print(f"[ETL Extract - Cliente {client_id}] Ingestão INCREMENTAL desde {last_created_at_utc}...")
+        print(f"[ETL Extract - Calls - Cliente {client_id}] Ingestão INCREMENTAL desde {last_created_at_utc}...")
     else:
-        print(f"[ETL Extract - Cliente {client_id}] Ingestão FULL SYNC...")
+        print(f"[ETL Extract - Calls - Cliente {client_id}] Ingestão FULL SYNC...")
         
     all_data = []
     batch_size = 1000
     start = 0
-    # Selecionamos transcript e removemos custos
     columns = "id, call_id, to_number, Nome, Email, agent_name, created_at, recording_url, transcript, Duracao, disconnection_reason"
     
     while True:
@@ -61,7 +66,7 @@ def extract_supabase_calls(client_id: str = "2", last_created_at_utc: Optional[s
             break
             
         all_data.extend(response.data)
-        print(f"[ETL Extract - Cliente {client_id}] Lote de {len(response.data)} registros (Total: {len(all_data)})")
+        print(f"[ETL Extract - Calls - Cliente {client_id}] Lote de {len(response.data)} registros (Total: {len(all_data)})")
         
         if len(response.data) < batch_size:
             break
@@ -75,15 +80,10 @@ def transform_call_data(raw_calls: List[Dict[str, Any]], client_id: str = "2", i
         raise ValueError("Nenhum registro extraído do Supabase.")
         
     df_new = pd.DataFrame(raw_calls)
-    
-    # 1. Converter datas UTC para o fuso de Brasília (America/Sao_Paulo)
     df_new['created_at'] = pd.to_datetime(df_new['created_at']).dt.tz_convert('America/Sao_Paulo')
-    
-    # 2. Conversão de Duração (ms -> s)
     df_new['Duracao'] = pd.to_numeric(df_new['Duracao'], errors='coerce').fillna(0.0) / 1000.0
     df_new['transcript'] = df_new['transcript'].fillna("")
     
-    # 3. Categorias de desconexão
     def map_disconnection_reason(reason: Any, duration_sec: float) -> str:
         if pd.isna(reason) or not reason:
             return "Conversa Normal" if duration_sec > 15.0 else "Não Atendeu"
@@ -103,14 +103,11 @@ def transform_call_data(raw_calls: List[Dict[str, Any]], client_id: str = "2", i
             return "Conversa Normal" if duration_sec > 15.0 else "Não Atendeu"
             
     df_new['disconnection_category'] = df_new.apply(lambda row: map_disconnection_reason(row['disconnection_reason'], row['Duracao']), axis=1)
-    
-    # 4. Flags de funil
     df_new['is_ligacao'] = (df_new['Duracao'] > 0.0).astype(int)
     df_new['is_hook'] = (df_new['Duracao'] > 15.0).astype(int)
     df_new['is_conversa'] = (df_new['Duracao'] > 45.0).astype(int)
     df_new['is_interesse'] = (df_new['Duracao'] > 90.0).astype(int)
     
-    # 5. Mesclar com histórico local se for incremental
     if is_incremental:
         active_leads = df_new['to_number'].dropna().unique()
         db_path = get_db_path_for_client(client_id)
@@ -139,13 +136,11 @@ def transform_call_data(raw_calls: List[Dict[str, Any]], client_id: str = "2", i
     else:
         df = df_new
         
-    # 6. Deduplicação por call_id
     df = df.sort_values('created_at')
     initial_len = len(df)
     df = df.drop_duplicates(subset=['call_id'], keep='last')
     deduped_len = len(df)
     
-    # 7. Cálculo de Variáveis de Fadiga por Lead (to_number)
     df = df.sort_values(['to_number', 'created_at']).reset_index(drop=True)
     df['n_tentativas_anteriores'] = df.groupby('to_number').cumcount()
     
@@ -159,7 +154,6 @@ def transform_call_data(raw_calls: List[Dict[str, Any]], client_id: str = "2", i
     df['densidade_tentativas'] = df['n_tentativas_anteriores'] / (df['horas_desde_primeiro_contato'] + 1.0)
     df['pressao_recente'] = df['n_tentativas_anteriores'] / (df['horas_desde_ultimo_contato'] + 1.0)
     
-    # Re-ordenar por data desc para salvar no SQLite
     df = df.sort_values('created_at', ascending=False).reset_index(drop=True)
     
     metadata = {
@@ -174,7 +168,7 @@ def transform_call_data(raw_calls: List[Dict[str, Any]], client_id: str = "2", i
     return df, metadata
 
 def load_data_to_sqlite(df: pd.DataFrame, client_id: str = "2", is_incremental: bool = False) -> Dict[str, Any]:
-    """Salva os dados transformados na base SQLite do cliente."""
+    """Salva os dados transformados de chamadas na base SQLite do cliente."""
     init_db_for_client(client_id)
     db_path = get_db_path_for_client(client_id)
     
@@ -202,25 +196,103 @@ def load_data_to_sqlite(df: pd.DataFrame, client_id: str = "2", is_incremental: 
         
     return {"saved_count": saved_count, "db_path": db_path}
 
+# ============================================================
+# INGESTÃO E PROCESSAMENTO DE AGENDAMENTOS (agendamentos)
+# ============================================================
+def extract_supabase_agendamentos(client_id: str = "2", last_created_at_utc: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Extrai novos agendamentos da tabela agendamentos no Supabase do cliente."""
+    supabase_client, _ = get_supabase_client_for_client_id(client_id)
+    
+    if last_created_at_utc:
+        print(f"[ETL Extract - Agendamentos - Cliente {client_id}] Ingestão INCREMENTAL desde {last_created_at_utc}...")
+    else:
+        print(f"[ETL Extract - Agendamentos - Cliente {client_id}] Ingestão FULL SYNC...")
+        
+    all_data = []
+    batch_size = 1000
+    start = 0
+    columns = "id, created_at, nome, email, numero, canal, data_agendamento, status, detalhes, google_event_id, calendar_id, execution_id, agent_id"
+    
+    try:
+        while True:
+            query = supabase_client.table("agendamentos").select(columns)
+            if last_created_at_utc:
+                query = query.gt("created_at", last_created_at_utc)
+                
+            response = query.range(start, start + batch_size - 1).execute()
+            if not response.data:
+                break
+                
+            all_data.extend(response.data)
+            print(f"[ETL Extract - Agendamentos - Cliente {client_id}] Lote de {len(response.data)} agendamentos (Total: {len(all_data)})")
+            
+            if len(response.data) < batch_size:
+                break
+            start += batch_size
+    except Exception as e:
+        print(f"[ETL Warning - Cliente {client_id}] Tabela agendamentos não acessível ou sem dados: {e}")
+        
+    return all_data
+
+def transform_and_load_agendamentos(raw_agendamentos: List[Dict[str, Any]], client_id: str = "2", is_incremental: bool = False) -> int:
+    """Transforma datas para BRT e carrega na tabela agendamentos do SQLite."""
+    if not raw_agendamentos:
+        return 0
+        
+    df = pd.DataFrame(raw_agendamentos)
+    
+    # Converter created_at e data_agendamento para Brasília
+    if 'created_at' in df.columns:
+        df['created_at'] = pd.to_datetime(df['created_at']).dt.tz_convert('America/Sao_Paulo').dt.strftime('%Y-%m-%d %H:%M:%S')
+    if 'data_agendamento' in df.columns:
+        df['data_agendamento'] = pd.to_datetime(df['data_agendamento'], errors='coerce').dt.tz_convert('America/Sao_Paulo').dt.strftime('%Y-%m-%d %H:%M:%S')
+        
+    init_db_for_client(client_id)
+    db_path = get_db_path_for_client(client_id)
+    
+    conn = sqlite3.connect(db_path)
+    try:
+        if is_incremental:
+            # Upsert cirúrgico usando REPLACE em SQLite
+            df.to_sql("agendamentos", conn, if_exists="append", index=False)
+        else:
+            df.to_sql("agendamentos", conn, if_exists="replace", index=False)
+            init_db_for_client(client_id)
+            
+        cursor = conn.cursor()
+        cursor.execute("SELECT count(*) FROM agendamentos")
+        saved_count = cursor.fetchone()[0]
+    finally:
+        conn.close()
+        
+    return saved_count
+
+# ============================================================
+# ORQUESTRADOR PRINCIPAL DO PIPELINE
+# ============================================================
 async def run_etl_pipeline(client_id: str = "2") -> Dict[str, Any]:
-    """Orquestrador do ETL por cliente."""
+    """Orquestrador completo de ETL (Chamadas + Agendamentos) por cliente."""
     execution_id = await start_workflow_execution(
         workflow_name=f"dashboard_etl_client_{client_id}",
         input_data={"trigger": "manual_or_scheduler", "client_id": client_id},
         client_id=client_id
     )
     
-    last_created_at_utc = get_last_created_at_local(client_id)
+    last_created_at_utc = get_last_created_at_local("calls", client_id)
     is_incremental = last_created_at_utc is not None
     raw_calls = []
+    raw_agendamentos = []
     df_transformed = None
     
     try:
-        # Step 1: Extract
+        # Step 1: Extract Calls & Agendamentos
         async def extract_worker():
-            nonlocal raw_calls
+            nonlocal raw_calls, raw_agendamentos
             raw_calls = extract_supabase_calls(client_id, last_created_at_utc)
-            return {"extracted_count": len(raw_calls)}
+            
+            last_agendamento_utc = get_last_created_at_local("agendamentos", client_id)
+            raw_agendamentos = extract_supabase_agendamentos(client_id, last_agendamento_utc)
+            return {"calls_count": len(raw_calls), "agendamentos_count": len(raw_agendamentos)}
             
         await run_step_with_retry(
             execution_id=execution_id,
@@ -229,12 +301,25 @@ async def run_etl_pipeline(client_id: str = "2") -> Dict[str, Any]:
             client_id=client_id
         )
         
+        # Step 2: Transform & Load Agendamentos
+        if raw_agendamentos:
+            async def agendamentos_worker():
+                last_agendamento_utc = get_last_created_at_local("agendamentos", client_id)
+                return {"saved_agendamentos": transform_and_load_agendamentos(raw_agendamentos, client_id, is_incremental=last_agendamento_utc is not None)}
+                
+            await run_step_with_retry(
+                execution_id=execution_id,
+                step_name="dashboard_etl_agendamentos",
+                worker_func=agendamentos_worker,
+                client_id=client_id
+            )
+
         if is_incremental and len(raw_calls) == 0:
-            summary = {"status": "SUCCESS (Sem novos dados)", "rows_loaded": 0, "client_id": client_id}
+            summary = {"status": "SUCCESS (Sem novas chamadas)", "agendamentos_loaded": len(raw_agendamentos), "client_id": client_id}
             await finish_workflow_execution(execution_id, "FINISHED", summary, client_id=client_id)
             return summary
             
-        # Step 2: Transform
+        # Step 3: Transform Calls
         async def transform_worker():
             nonlocal df_transformed
             df_transformed, meta = transform_call_data(raw_calls, client_id, is_incremental)
@@ -247,7 +332,7 @@ async def run_etl_pipeline(client_id: str = "2") -> Dict[str, Any]:
             client_id=client_id
         )
         
-        # Step 3: Load
+        # Step 4: Load Calls
         async def load_worker():
             return load_data_to_sqlite(df_transformed, client_id, is_incremental)
             
@@ -260,8 +345,9 @@ async def run_etl_pipeline(client_id: str = "2") -> Dict[str, Any]:
         
         summary = {
             "status": "FINISHED",
-            "rows_extracted": len(raw_calls),
-            "rows_loaded": load_out["saved_count"],
+            "calls_extracted": len(raw_calls),
+            "calls_loaded": load_out["saved_count"],
+            "agendamentos_extracted": len(raw_agendamentos),
             "client_id": client_id
         }
         await finish_workflow_execution(execution_id, "FINISHED", summary, client_id=client_id)

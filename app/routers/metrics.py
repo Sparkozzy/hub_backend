@@ -15,7 +15,7 @@ async def get_metrics(
     active_client = client_id or x_client_id or "2"
     where_clause, params = build_filter_clauses(agent, start_date, end_date)
     
-    query = f"""
+    query_calls = f"""
     SELECT 
         count(*) as total_calls,
         count(distinct to_number) as unique_leads,
@@ -30,7 +30,24 @@ async def get_metrics(
     WHERE 1=1 {where_clause}
     """
     
-    results = await run_query(query, tuple(params), client_id=active_client)
+    results = await run_query(query_calls, tuple(params), client_id=active_client)
+    
+    # Query agendamentos para o período (usando start_date e end_date se informados)
+    agendamentos_clauses = []
+    agendamentos_params = []
+    if start_date:
+        agendamentos_clauses.append("created_at >= ?")
+        agendamentos_params.append(f"{start_date} 00:00:00" if len(start_date) == 10 else start_date)
+    if end_date:
+        agendamentos_clauses.append("created_at <= ?")
+        agendamentos_params.append(f"{end_date} 23:59:59" if len(end_date) == 10 else end_date)
+        
+    agendamentos_where = " AND " + " AND ".join(agendamentos_clauses) if agendamentos_clauses else ""
+    query_agendamentos = f"SELECT count(*) as total_agendamentos FROM agendamentos WHERE 1=1 {agendamentos_where}"
+    
+    res_agendamentos = await run_query(query_agendamentos, tuple(agendamentos_params), client_id=active_client)
+    total_agendamentos = res_agendamentos[0]["total_agendamentos"] if res_agendamentos else 0
+
     if not results or results[0]["total_calls"] == 0:
         return {
             "total_calls": 0,
@@ -38,6 +55,8 @@ async def get_metrics(
             "total_hooks": 0,
             "total_conversas": 0,
             "total_interesse": 0,
+            "total_agendamentos": total_agendamentos,
+            "taxa_agendamento_por_lead": 0.0,
             "minutagem_total": 0.0,
             "minutagem_media": 0.0,
             "minutagem_por_lead": 0.0,
@@ -67,12 +86,17 @@ async def get_metrics(
     avg_calls_per_lead = total_calls / unique_leads if unique_leads > 0 else 0.0
     interest_rate = (total_interesse / unique_leads) * 100.0 if unique_leads > 0 else 0.0
     
+    # Métrica de Taxa de Agendamento por Lead Único
+    taxa_agendamento = (total_agendamentos / unique_leads) * 100.0 if unique_leads > 0 else 0.0
+    
     return {
         "total_calls": total_calls,
         "unique_leads": unique_leads,
         "total_hooks": total_hooks,
         "total_conversas": total_conversas,
         "total_interesse": total_interesse,
+        "total_agendamentos": total_agendamentos,
+        "taxa_agendamento_por_lead": round(taxa_agendamento, 2),
         "minutagem_total": round(minutagem_total, 2),
         "minutagem_media": round(minutagem_media, 2),
         "minutagem_por_lead": round(minutagem_por_lead, 2),

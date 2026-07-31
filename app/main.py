@@ -13,7 +13,8 @@ from app.routers import (
     fatigue,
     hours,
     disconnections,
-    agents
+    agents,
+    agendamentos
 )
 
 scheduler = AsyncIOScheduler()
@@ -21,13 +22,11 @@ scheduler = AsyncIOScheduler()
 async def run_daily_multi_tenant_etl():
     """Roda o ETL para o cliente master e todos os clientes cadastrados em client_configurations."""
     print("[Lifespan Scheduler] Iniciando ETL diário automático às 3:00 AM (BRT)...")
-    # 1. Rodar master (client_id = "2")
     try:
         await run_etl_pipeline("2")
     except Exception as e:
         print(f"[Lifespan Scheduler Error] Falha no ETL do cliente master: {e}")
         
-    # 2. Buscar demais clientes cadastrados
     try:
         master = get_master_supabase_client()
         res = master.table("client_configurations").select("client_id").execute()
@@ -44,7 +43,6 @@ async def run_daily_multi_tenant_etl():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Agendar ETL diário às 3:00 AM (fuso Brasília)
     scheduler.add_job(
         run_daily_multi_tenant_etl,
         'cron',
@@ -63,7 +61,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="MindFlow Call Analytics API (Multi-Tenant)",
     description="API REST Backend em Python para o Hub de Plataformas com suporte a Multi-Tenancy e fuso BRT.",
-    version="2.0.0",
+    version="2.1.0",
     lifespan=lifespan
 )
 
@@ -83,13 +81,14 @@ app.include_router(fatigue.router)
 app.include_router(hours.router)
 app.include_router(disconnections.router)
 app.include_router(agents.router)
+app.include_router(agendamentos.router)
 
 @app.get("/")
 async def root():
     return {
         "status": "online",
         "service": "MindFlow Call Analytics API (Multi-Tenant)",
-        "version": "2.0.0"
+        "version": "2.1.0"
     }
 
 if __name__ == "__main__":
