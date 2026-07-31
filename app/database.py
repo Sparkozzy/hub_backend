@@ -109,23 +109,25 @@ def build_filter_clauses(
 
     if agent:
         clauses.append("agent_name = ?")
-        params.append(agent)
+        params.append(str(agent))
 
-    if start_date:
-        if len(start_date) == 10:
+    if start_date and not hasattr(start_date, '__dict__'):
+        start_str = str(start_date).strip()
+        if len(start_str) == 10:
             clauses.append("created_at >= ?")
-            params.append(f"{start_date} 00:00:00")
+            params.append(f"{start_str} 00:00:00")
         else:
             clauses.append("created_at >= ?")
-            params.append(start_date)
+            params.append(start_str)
 
-    if end_date:
-        if len(end_date) == 10:
+    if end_date and not hasattr(end_date, '__dict__'):
+        end_str = str(end_date).strip()
+        if len(end_str) == 10:
             clauses.append("created_at <= ?")
-            params.append(f"{end_date} 23:59:59")
+            params.append(f"{end_str} 23:59:59")
         else:
             clauses.append("created_at <= ?")
-            params.append(end_date)
+            params.append(end_str)
 
     where_clause = " AND " + " AND ".join(clauses) if clauses else ""
     return where_clause, params

@@ -35,12 +35,14 @@ async def get_metrics(
     # Query agendamentos para o período (usando start_date e end_date se informados)
     agendamentos_clauses = []
     agendamentos_params = []
-    if start_date:
+    if start_date and not hasattr(start_date, '__dict__'):
+        start_str = str(start_date).strip()
         agendamentos_clauses.append("created_at >= ?")
-        agendamentos_params.append(f"{start_date} 00:00:00" if len(start_date) == 10 else start_date)
-    if end_date:
+        agendamentos_params.append(f"{start_str} 00:00:00" if len(start_str) == 10 else start_str)
+    if end_date and not hasattr(end_date, '__dict__'):
+        end_str = str(end_date).strip()
         agendamentos_clauses.append("created_at <= ?")
-        agendamentos_params.append(f"{end_date} 23:59:59" if len(end_date) == 10 else end_date)
+        agendamentos_params.append(f"{end_str} 23:59:59" if len(end_str) == 10 else end_str)
         
     agendamentos_where = " AND " + " AND ".join(agendamentos_clauses) if agendamentos_clauses else ""
     query_agendamentos = f"SELECT count(*) as total_agendamentos FROM agendamentos WHERE 1=1 {agendamentos_where}"
