@@ -1,4 +1,5 @@
 import os
+import json
 import sqlite3
 import pandas as pd
 from typing import Dict, Any, List, Tuple, Optional
@@ -253,7 +254,12 @@ def transform_and_load_agendamentos(raw_agendamentos: List[Dict[str, Any]], clie
     conn = sqlite3.connect(db_path)
     try:
         if is_incremental:
-            # Upsert cirúrgico usando REPLACE em SQLite
+            cursor = conn.cursor()
+            existing_ids = df['id'].dropna().tolist()
+            if existing_ids:
+                placeholders = ",".join(["?"] * len(existing_ids))
+                cursor.execute(f"DELETE FROM agendamentos WHERE id IN ({placeholders})", existing_ids)
+                conn.commit()
             df.to_sql("agendamentos", conn, if_exists="append", index=False)
         else:
             df.to_sql("agendamentos", conn, if_exists="replace", index=False)
@@ -268,10 +274,128 @@ def transform_and_load_agendamentos(raw_agendamentos: List[Dict[str, Any]], clie
     return saved_count
 
 # ============================================================
+# INGESTÃO E PROCESSAMENTO DE WHATSAPP (leads_mindflow & n8n_chat_histories)
+# ============================================================
+def extract_supabase_whatsapp_leads(client_id: str = "2") -> List[Dict[str, Any]]:
+    """Extrai leads da tabela Leads_Mindflow no Supabase."""
+    supabase_client, _ = get_supabase_client_for_client_id(client_id)
+    all_data = []
+    batch_size = 1000
+    start = 0
+    
+    try:
+        while True:
+            response = supabase_client.table("Leads_Mindflow").select("*").range(start, start + batch_size - 1).execute()
+            if not response.data:
+                break
+            all_data.extend(response.data)
+            if len(response.data) < batch_size:
+                break
+            start += batch_size
+    except Exception as e:
+        print(f"[ETL Warning - Cliente {client_id}] Tabela Leads_Mindflow erro: {e}")
+        
+    return all_data
+
+def extract_supabase_n8n_chat_histories(client_id: str = "2") -> List[Dict[str, Any]]:
+    """Extrai histórico de chats da tabela n8n_chat_histories no Supabase."""
+    supabase_client, _ = get_supabase_client_for_client_id(client_id)
+    all_data = []
+    batch_size = 1000
+    start = 0
+    
+    try:
+        while True:
+            response = supabase_client.table("n8n_chat_histories").select("id, session_id, message, created_at").range(start, start + batch_size - 1).execute()
+            if not response.data:
+                break
+            all_data.extend(response.data)
+            if len(response.data) < batch_size:
+                break
+            start += batch_size
+    except Exception as e:
+        print(f"[ETL Warning - Cliente {client_id}] Tabela n8n_chat_histories erro: {e}")
+        
+    return all_data
+
+def transform_and_load_whatsapp_data(raw_leads: List[Dict[str, Any]], raw_chats: List[Dict[str, Any]], client_id: str = "2") -> Dict[str, int]:
+    """Carrega dados de WhatsApp no SQLite local do cliente."""
+    init_db_for_client(client_id)
+    db_path = get_db_path_for_client(client_id)
+    conn = sqlite3.connect(db_path)
+    
+    saved_leads = 0
+    saved_chats = 0
+    
+    try:
+        if raw_leads:
+            df_leads = pd.DataFrame(raw_leads)
+            # Mapear nomes de colunas do Supabase para o SQLite local
+            rename_map = {
+                "id": "id",
+                "Número": "numero",
+                "Nome": "nome",
+                "Email": "email",
+                "created_at": "created_at",
+                "data ultima msgm": "data_ultima_msgm",
+                "Ultima msgm (texto)": "ultima_msgm_texto",
+                "Etapa CRM": "etapa_crm",
+                "Reunião Marcada": "reuniao_marcada",
+                "causa_raiz": "causa_raiz",
+                "transcricao": "transcricao"
+            }
+            # Manter apenas colunas mapeadas que existem no DataFrame
+            cols_to_keep = [col for col in rename_map.keys() if col in df_leads.columns]
+            df_leads_clean = df_leads[cols_to_keep].rename(columns=rename_map)
+            
+            # Garantir deduplicação por número
+            if "numero" in df_leads_clean.columns:
+                df_leads_clean = df_leads_clean.drop_duplicates(subset=["numero"], keep="last")
+                
+            df_leads_clean.to_sql("leads_mindflow", conn, if_exists="replace", index=False)
+            cursor = conn.cursor()
+            cursor.execute("SELECT count(*) FROM leads_mindflow")
+            saved_leads = cursor.fetchone()[0]
+
+        if raw_chats:
+            formatted_chats = []
+            for item in raw_chats:
+                msg_obj = item.get("message") or {}
+                if isinstance(msg_obj, str):
+                    try:
+                        msg_obj = json.loads(msg_obj)
+                    except Exception:
+                        msg_obj = {}
+                
+                formatted_chats.append({
+                    "id": item.get("id"),
+                    "session_id": str(item.get("session_id") or ""),
+                    "message_type": msg_obj.get("type", "unknown") if isinstance(msg_obj, dict) else "unknown",
+                    "message_content": str(msg_obj.get("content", "")) if isinstance(msg_obj, dict) else str(msg_obj),
+                    "created_at": item.get("created_at")
+                })
+                
+            df_chats = pd.DataFrame(formatted_chats)
+            df_chats.to_sql("n8n_chat_histories", conn, if_exists="replace", index=False)
+            cursor = conn.cursor()
+            cursor.execute("SELECT count(*) FROM n8n_chat_histories")
+            saved_chats = cursor.fetchone()[0]
+
+    except Exception as exc:
+        import traceback
+        print(f"[ETL Error transform_and_load_whatsapp_data]: {exc}")
+        traceback.print_exc()
+        raise exc
+    finally:
+        conn.close()
+        
+    return {"saved_leads": saved_leads, "saved_chats": saved_chats}
+
+# ============================================================
 # ORQUESTRADOR PRINCIPAL DO PIPELINE
 # ============================================================
 async def run_etl_pipeline(client_id: str = "2") -> Dict[str, Any]:
-    """Orquestrador completo de ETL (Chamadas + Agendamentos) por cliente."""
+    """Orquestrador completo de ETL (Chamadas + Agendamentos + WhatsApp) por cliente."""
     execution_id = await start_workflow_execution(
         workflow_name=f"dashboard_etl_client_{client_id}",
         input_data={"trigger": "manual_or_scheduler", "client_id": client_id},
@@ -282,17 +406,27 @@ async def run_etl_pipeline(client_id: str = "2") -> Dict[str, Any]:
     is_incremental = last_created_at_utc is not None
     raw_calls = []
     raw_agendamentos = []
+    raw_wa_leads = []
+    raw_wa_chats = []
     df_transformed = None
     
     try:
-        # Step 1: Extract Calls & Agendamentos
+        # Step 1: Extract Calls, Agendamentos & WhatsApp
         async def extract_worker():
-            nonlocal raw_calls, raw_agendamentos
+            nonlocal raw_calls, raw_agendamentos, raw_wa_leads, raw_wa_chats
             raw_calls = extract_supabase_calls(client_id, last_created_at_utc)
             
             last_agendamento_utc = get_last_created_at_local("agendamentos", client_id)
             raw_agendamentos = extract_supabase_agendamentos(client_id, last_agendamento_utc)
-            return {"calls_count": len(raw_calls), "agendamentos_count": len(raw_agendamentos)}
+
+            raw_wa_leads = extract_supabase_whatsapp_leads(client_id)
+            raw_wa_chats = extract_supabase_n8n_chat_histories(client_id)
+            return {
+                "calls_count": len(raw_calls),
+                "agendamentos_count": len(raw_agendamentos),
+                "wa_leads_count": len(raw_wa_leads),
+                "wa_chats_count": len(raw_wa_chats)
+            }
             
         await run_step_with_retry(
             execution_id=execution_id,
@@ -301,21 +435,38 @@ async def run_etl_pipeline(client_id: str = "2") -> Dict[str, Any]:
             client_id=client_id
         )
         
-        # Step 2: Transform & Load Agendamentos
-        if raw_agendamentos:
-            async def agendamentos_worker():
-                last_agendamento_utc = get_last_created_at_local("agendamentos", client_id)
-                return {"saved_agendamentos": transform_and_load_agendamentos(raw_agendamentos, client_id, is_incremental=last_agendamento_utc is not None)}
-                
-            await run_step_with_retry(
-                execution_id=execution_id,
-                step_name="dashboard_etl_agendamentos",
-                worker_func=agendamentos_worker,
-                client_id=client_id
-            )
+        # Step 2: Transform & Load Agendamentos & WhatsApp
+        def extra_data_worker():
+            try:
+                out = {}
+                if raw_agendamentos:
+                    ag_last = get_last_created_at_local("agendamentos", client_id)
+                    out["saved_agendamentos"] = transform_and_load_agendamentos(raw_agendamentos, client_id, is_incremental=ag_last is not None)
+                if raw_wa_leads or raw_wa_chats:
+                    wa_out = transform_and_load_whatsapp_data(raw_wa_leads, raw_wa_chats, client_id)
+                    out.update(wa_out)
+                return out
+            except Exception as e:
+                import traceback
+                print(f"[EXTRA DATA WORKER EXCEPTION]: {e}", flush=True)
+                traceback.print_exc()
+                raise e
+            
+        await run_step_with_retry(
+            execution_id=execution_id,
+            step_name="dashboard_etl_extra_data",
+            worker_func=extra_data_worker,
+            client_id=client_id
+        )
 
         if is_incremental and len(raw_calls) == 0:
-            summary = {"status": "SUCCESS (Sem novas chamadas)", "agendamentos_loaded": len(raw_agendamentos), "client_id": client_id}
+            summary = {
+                "status": "SUCCESS (Sem novas chamadas)",
+                "agendamentos_loaded": len(raw_agendamentos),
+                "wa_leads_loaded": len(raw_wa_leads),
+                "wa_chats_loaded": len(raw_wa_chats),
+                "client_id": client_id
+            }
             await finish_workflow_execution(execution_id, "FINISHED", summary, client_id=client_id)
             return summary
             
@@ -348,6 +499,8 @@ async def run_etl_pipeline(client_id: str = "2") -> Dict[str, Any]:
             "calls_extracted": len(raw_calls),
             "calls_loaded": load_out["saved_count"],
             "agendamentos_extracted": len(raw_agendamentos),
+            "wa_leads_extracted": len(raw_wa_leads),
+            "wa_chats_extracted": len(raw_wa_chats),
             "client_id": client_id
         }
         await finish_workflow_execution(execution_id, "FINISHED", summary, client_id=client_id)
@@ -356,3 +509,4 @@ async def run_etl_pipeline(client_id: str = "2") -> Dict[str, Any]:
     except Exception as e:
         await finish_workflow_execution(execution_id, "FAILED", error_details=str(e), client_id=client_id)
         raise e
+

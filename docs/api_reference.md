@@ -180,4 +180,66 @@ Retorna a lista de nomes únicos de agentes SDR que efetuaram chamadas.
 
 ### 9. `POST /etl/trigger` — Disparo Manual de ETL
 
-Dispara o pipeline de ingestão e pré-processamento em background (Calls + Agendamentos) para o cliente especificado.
+Dispara o pipeline de ingestão e pré-processamento em background (Calls + Agendamentos + WhatsApp) para o cliente especificado.
+
+---
+
+## 💬 Endpoints de WhatsApp (`/whatsapp/*`)
+
+### 10. `GET /whatsapp/metrics` — Indicadores Chave de WhatsApp
+
+Retorna as métricas consolidadas de engajamento do WhatsApp (Sem métricas de agendamento).
+
+#### Exemplo de Resposta (`200 OK`)
+```json
+{
+  "total_leads": 188,
+  "leads_novos_24h": 12,
+  "leads_ativos_24h": 35,
+  "taxa_resposta": 78.45,
+  "tempo_medio_atendimento_minutos": 14.80,
+  "total_mensagens": 8376,
+  "mensagens_lead": 4120,
+  "mensagens_ia": 4256,
+  "avg_mensagens_por_lead": 44.55
+}
+```
+
+---
+
+### 11. `GET /whatsapp/funnel` — Funil de Engajamento do WhatsApp
+
+Retorna o volume de leads em cada etapa do funil de mensagens.
+
+#### Exemplo de Resposta (`200 OK`)
+```json
+{
+  "total_leads": 188,
+  "leads_novos_24h": 12,
+  "leads_ativos_24h": 35,
+  "leads_com_resposta": 147,
+  "conversas_engajadas_gt5_msgs": 98
+}
+```
+
+---
+
+### 12. `GET /whatsapp/chats` — Auditoria Paginada de Conversas
+
+Retorna a lista paginada de leads/conversas com última mensagem e tempo total de atendimento.
+
+#### Query Params
+- `search`, `start_date`, `end_date`, `page` (default: 1), `limit` (default: 20, max: 100), `client_id`
+
+---
+
+### 13. `GET /whatsapp/chats/{session_id}/messages` — Histórico de Mensagens
+
+Retorna todas as mensagens trocadas com o lead da sessão especificada (`session_id`).
+
+---
+
+### 14. `GET /whatsapp/hours` — Distribuição Horária no WhatsApp (BRT)
+
+Retorna a distribuição de mensagens enviadas e recebidas por hora do dia no fuso de Brasília.
+

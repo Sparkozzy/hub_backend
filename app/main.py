@@ -14,7 +14,8 @@ from app.routers import (
     hours,
     disconnections,
     agents,
-    agendamentos
+    agendamentos,
+    whatsapp
 )
 
 scheduler = AsyncIOScheduler()
@@ -82,6 +83,7 @@ app.include_router(hours.router)
 app.include_router(disconnections.router)
 app.include_router(agents.router)
 app.include_router(agendamentos.router)
+app.include_router(whatsapp.router)
 
 @app.get("/")
 async def root():

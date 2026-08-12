@@ -78,6 +78,40 @@ def init_db_for_client(client_id: str = "2"):
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_agendamentos_status ON agendamentos(status)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_agendamentos_canal ON agendamentos(canal)")
 
+    # Criar tabela leads_mindflow local para WhatsApp
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS leads_mindflow (
+        id INTEGER PRIMARY KEY,
+        numero TEXT UNIQUE,
+        nome TEXT,
+        email TEXT,
+        created_at TEXT,
+        data_ultima_msgm TEXT,
+        ultima_msgm_texto TEXT,
+        etapa_crm TEXT,
+        reuniao_marcada TEXT,
+        causa_raiz TEXT,
+        transcricao TEXT
+    )
+    """)
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_numero ON leads_mindflow(numero)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_leads_created_at ON leads_mindflow(created_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_leads_data_ultima_msgm ON leads_mindflow(data_ultima_msgm)")
+
+    # Criar tabela n8n_chat_histories local para WhatsApp
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS n8n_chat_histories (
+        id INTEGER PRIMARY KEY,
+        session_id TEXT,
+        message_type TEXT,
+        message_content TEXT,
+        created_at TEXT
+    )
+    """)
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_n8n_chat_id ON n8n_chat_histories(id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_n8n_chat_session ON n8n_chat_histories(session_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_n8n_chat_created ON n8n_chat_histories(created_at)")
+
     conn.commit()
     conn.close()
 
