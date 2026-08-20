@@ -55,6 +55,11 @@ async def lifespan(app: FastAPI):
     )
     scheduler.start()
     print(f"[Lifespan] Servidor FastAPI iniciado na porta {PORT}. Agendador diário ativo (3:00 AM BRT).")
+    
+    # Disparar ETL inicial em background no startup
+    import asyncio
+    asyncio.create_task(run_daily_multi_tenant_etl())
+    
     yield
     scheduler.shutdown()
     print("[Lifespan] Agendador finalizado.")
@@ -84,6 +89,13 @@ app.include_router(disconnections.router)
 app.include_router(agents.router)
 app.include_router(agendamentos.router)
 app.include_router(whatsapp.router)
+
+@app.post("/api/etl/run")
+async def trigger_etl():
+    """Dispara a execução imediata da pipeline de ETL para todos os clientes."""
+    import asyncio
+    asyncio.create_task(run_daily_multi_tenant_etl())
+    return {"status": "started", "message": "Pipeline de ETL multi-tenant iniciada em background."}
 
 @app.get("/")
 async def root():
