@@ -139,7 +139,12 @@ def transform_call_data(raw_calls: List[Dict[str, Any]], client_id: str = "2", i
         
     df = df.sort_values('created_at')
     initial_len = len(df)
-    df = df.drop_duplicates(subset=['call_id'], keep='last')
+    if 'call_id' in df.columns and df['call_id'].notna().any():
+        # Usa call_id onde disponível, e id onde call_id for nulo
+        df['dedup_key'] = df['call_id'].fillna(df['id'].astype(str))
+        df = df.drop_duplicates(subset=['dedup_key'], keep='last').drop(columns=['dedup_key'])
+    else:
+        df = df.drop_duplicates(subset=['id'], keep='last')
     deduped_len = len(df)
     
     df = df.sort_values(['to_number', 'created_at']).reset_index(drop=True)
