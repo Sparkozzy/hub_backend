@@ -24,11 +24,11 @@ async def get_calls(
     
     duration_clauses = []
     if min_duration is not None:
-        duration_clauses.append("Duracao >= ?")
+        duration_clauses.append("CAST(Duracao AS REAL) >= ?")
         list_params.append(min_duration)
         count_params.append(min_duration)
     if max_duration is not None:
-        duration_clauses.append("Duracao <= ?")
+        duration_clauses.append("CAST(Duracao AS REAL) <= ?")
         list_params.append(max_duration)
         count_params.append(max_duration)
         
