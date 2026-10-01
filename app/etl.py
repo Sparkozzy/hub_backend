@@ -81,7 +81,7 @@ def transform_call_data(raw_calls: List[Dict[str, Any]], client_id: str = "2", i
         raise ValueError("Nenhum registro extraído do Supabase.")
         
     df_new = pd.DataFrame(raw_calls)
-    df_new['created_at'] = pd.to_datetime(df_new['created_at']).dt.tz_convert('America/Sao_Paulo')
+    df_new['created_at'] = pd.to_datetime(df_new['created_at'], format='ISO8601', utc=True).dt.tz_convert('America/Sao_Paulo')
     df_new['Duracao'] = pd.to_numeric(df_new['Duracao'], errors='coerce').fillna(0.0) / 1000.0
     df_new['transcript'] = df_new['transcript'].fillna("")
     
@@ -121,7 +121,7 @@ def transform_call_data(raw_calls: List[Dict[str, Any]], client_id: str = "2", i
                 conn.close()
                 
                 if not df_old.empty:
-                    df_old['created_at'] = pd.to_datetime(df_old['created_at']).dt.tz_localize('America/Sao_Paulo')
+                    df_old['created_at'] = pd.to_datetime(df_old['created_at'], format='ISO8601').dt.tz_localize('America/Sao_Paulo')
                     df_old['Duracao'] = pd.to_numeric(df_old['Duracao'], errors='coerce').fillna(0.0)
                     if 'transcript' not in df_old.columns:
                         df_old['transcript'] = ""
