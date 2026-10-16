@@ -82,7 +82,8 @@ def transform_call_data(raw_calls: List[Dict[str, Any]], client_id: str = "2", i
         
     df_new = pd.DataFrame(raw_calls)
     df_new['created_at'] = pd.to_datetime(df_new['created_at'], format='ISO8601', utc=True).dt.tz_convert('America/Sao_Paulo')
-    df_new['Duracao'] = pd.to_numeric(df_new['Duracao'], errors='coerce').fillna(0.0) / 1000.0
+    dur_raw = pd.to_numeric(df_new['Duracao'], errors='coerce').fillna(0.0)
+    df_new['Duracao'] = dur_raw.apply(lambda d: d / 1000.0 if d > 1000.0 else d)
     df_new['transcript'] = df_new['transcript'].fillna("")
     
     def map_disconnection_reason(reason: Any, duration_sec: float) -> str:
