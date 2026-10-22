@@ -56,10 +56,6 @@ async def lifespan(app: FastAPI):
     scheduler.start()
     print(f"[Lifespan] Servidor FastAPI iniciado na porta {PORT}. Agendador diário ativo (3:00 AM BRT).")
     
-    # Disparar ETL inicial em background no startup
-    import asyncio
-    asyncio.create_task(run_daily_multi_tenant_etl())
-    
     yield
     scheduler.shutdown()
     print("[Lifespan] Agendador finalizado.")
@@ -98,6 +94,8 @@ async def trigger_etl():
     return {"status": "started", "message": "Pipeline de ETL multi-tenant iniciada em background."}
 
 @app.get("/")
+@app.get("/health")
+@app.get("/api/health")
 async def root():
     return {
         "status": "online",
