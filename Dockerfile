@@ -1,11 +1,16 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    TZ=America/Sao_Paulo
 
 WORKDIR /app
 
-# Instalar dependências de sistema
+# Instalar dependências de sistema e utilitários
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -18,4 +23,4 @@ RUN mkdir -p data/clients
 
 EXPOSE 8000
 
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
