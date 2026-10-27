@@ -82,8 +82,26 @@ def transform_call_data(raw_calls: List[Dict[str, Any]], client_id: str = "2", i
         
     df_new = pd.DataFrame(raw_calls)
     df_new['created_at'] = pd.to_datetime(df_new['created_at'], format='ISO8601', utc=True).dt.tz_convert('America/Sao_Paulo')
-    dur_raw = pd.to_numeric(df_new['Duracao'], errors='coerce').fillna(0.0)
-    df_new['Duracao'] = dur_raw.apply(lambda d: d / 1000.0 if d > 1000.0 else d)
+    def clean_duration(val: Any) -> float:
+        if pd.isna(val) or val is None or val == "":
+            return 0.0
+        val_str = str(val).strip()
+        try:
+            val_float = float(val_str)
+        except (ValueError, TypeError):
+            return 0.0
+
+        if val_float <= 0:
+            return 0.0
+
+        # Se for inteiro (ex: '996', '14971' vindo de duration_ms da Retell) ou valor >= 1000 ms:
+        if val_str.isdigit() or val_float >= 1000.0:
+            return round(val_float / 1000.0, 3)
+
+        # Já está em segundos (ex: '3.769', '11.272')
+        return round(val_float, 3)
+
+    df_new['Duracao'] = df_new['Duracao'].apply(clean_duration)
     df_new['transcript'] = df_new['transcript'].fillna("")
     
     def map_disconnection_reason(reason: Any, duration_sec: float) -> str:
