@@ -131,8 +131,10 @@ async def get_whatsapp_chats(
     search: Optional[str] = Query(None, description="Busca por nome, e-mail ou número"),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
+    startDate: Optional[str] = Query(None),
+    endDate: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(20, ge=1, le=10000),
     client_id: Optional[str] = Query(None),
     x_client_id: Optional[str] = Header(None, alias="X-Client-ID")
 ):
@@ -140,6 +142,8 @@ async def get_whatsapp_chats(
     Retorna a lista paginada de conversas com histórico e transcrição resumida.
     """
     cid = x_client_id or client_id or "2"
+    effective_start = start_date or startDate
+    effective_end = end_date or endDate
     offset = (page - 1) * limit
     
     where_clauses = []
@@ -150,13 +154,13 @@ async def get_whatsapp_chats(
         search_pattern = f"%{search.strip()}%"
         params.extend([search_pattern, search_pattern, search_pattern])
         
-    if start_date:
+    if effective_start:
         where_clauses.append("created_at >= ?")
-        params.append(f"{start_date.strip()} 00:00:00")
+        params.append(f"{effective_start.strip()} 00:00:00")
         
-    if end_date:
+    if effective_end:
         where_clauses.append("created_at <= ?")
-        params.append(f"{end_date.strip()} 23:59:59")
+        params.append(f"{effective_end.strip()} 23:59:59")
         
     where_sql = " WHERE " + " AND ".join(where_clauses) if where_clauses else ""
     

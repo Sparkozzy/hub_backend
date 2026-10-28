@@ -11,8 +11,10 @@ async def get_agendamentos(
     search: Optional[str] = Query(None),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
+    startDate: Optional[str] = Query(None),
+    endDate: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(20, ge=1, le=10000),
     client_id: Optional[str] = Query(None),
     x_client_id: Optional[str] = Header(None)
 ):
@@ -21,6 +23,8 @@ async def get_agendamentos(
     Filtra por período, status, canal ou termo de busca textual (nome/email/número).
     """
     active_client = client_id or x_client_id or "2"
+    effective_start = start_date or startDate
+    effective_end = end_date or endDate
     clauses = []
     params = []
 
@@ -37,13 +41,13 @@ async def get_agendamentos(
         clauses.append("(nome LIKE ? OR email LIKE ? OR numero LIKE ?)")
         params.extend([search_pattern, search_pattern, search_pattern])
 
-    if start_date:
+    if effective_start:
         clauses.append("created_at >= ?")
-        params.append(f"{start_date} 00:00:00" if len(start_date) == 10 else start_date)
+        params.append(f"{effective_start} 00:00:00" if len(effective_start) == 10 else effective_start)
 
-    if end_date:
+    if effective_end:
         clauses.append("created_at <= ?")
-        params.append(f"{end_date} 23:59:59" if len(end_date) == 10 else end_date)
+        params.append(f"{effective_end} 23:59:59" if len(effective_end) == 10 else effective_end)
 
     where_clause = " AND " + " AND ".join(clauses) if clauses else ""
     offset = (page - 1) * limit

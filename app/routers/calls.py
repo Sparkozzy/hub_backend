@@ -9,15 +9,19 @@ async def get_calls(
     agent: Optional[str] = Query(None),
     start_date: Optional[str] = Query(None),
     end_date: Optional[str] = Query(None),
+    startDate: Optional[str] = Query(None),
+    endDate: Optional[str] = Query(None),
     min_duration: Optional[float] = Query(None),
     max_duration: Optional[float] = Query(None),
     page: int = Query(1, ge=1),
-    limit: int = Query(20, ge=1, le=100),
+    limit: int = Query(20, ge=1, le=10000),
     client_id: Optional[str] = Query(None),
     x_client_id: Optional[str] = Header(None)
 ):
     active_client = client_id or x_client_id or "2"
-    where_clause, params = build_filter_clauses(agent, start_date, end_date)
+    effective_start = start_date or startDate
+    effective_end = end_date or endDate
+    where_clause, params = build_filter_clauses(agent, effective_start, effective_end)
     
     list_params = list(params)
     count_params = list(params)
